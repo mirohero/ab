@@ -1,0 +1,85 @@
+{
+  "questions": [
+    {
+      "id": "topic",
+      "title": "Welches Thema betrifft deine Anfrage?",
+      "options": [
+        {
+          "id": "software",
+          "label": "Software",
+          "code": 1
+        },
+        {
+          "id": "hardware",
+          "label": "Hardware",
+          "code": 2
+        },
+        {
+          "id": "other",
+          "label": "Sonstiges",
+          "code": 3
+        }
+      ]
+    },
+    {
+      "id": "urgency",
+      "title": "Wie dringend ist die Anfrage?",
+      "options": [
+        {
+          "id": "urgent",
+          "label": "Dringend",
+          "code": 1
+        },
+        {
+          "id": "normal",
+          "label": "Normal",
+          "code": 2
+        }
+      ]
+    },
+    {
+      "id": "people",
+      "title": "Wie viele Personen sind betroffen?",
+      "options": [
+        {
+          "id": "one",
+          "label": "Eine Person",
+          "code": 1
+        },
+        {
+          "id": "many",
+          "label": "Mehrere Personen",
+          "code": 2
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "high",
+      "code": 1,
+      "when": {
+        "urgency": "urgent",
+        "people": "many"
+      },
+      "title": "Hohe Priorität",
+      "text": "Melde die Störung telefonisch beim Support und nenne alle betroffenen Personen."
+    },
+    {
+      "id": "soon",
+      "code": 2,
+      "when": {
+        "urgency": "urgent"
+      },
+      "title": "Zeitnah bearbeiten",
+      "text": "Melde deine Anfrage telefonisch beim Support."
+    },
+    {
+      "id": "normal",
+      "code": 3,
+      "when": {},
+      "title": "Reguläre Anfrage",
+      "text": "Erstelle ein Support-Ticket mit Fehlerbeschreibung und bisherigen Schritten."
+    }
+  ]
+}

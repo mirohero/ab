@@ -4,9 +4,8 @@ class AppConfig {
   static const supabaseKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
 
   static void validate() {
-    if (storageMode == 'local') return;
     if (storageMode != 'supabase') {
-      throw StateError('STORAGE_MODE muss local oder supabase sein.');
+      throw StateError('Diese Version benötigt STORAGE_MODE=supabase.');
     }
     final url = Uri.tryParse(supabaseUrl);
     if (url == null || url.scheme != 'https' || url.host.isEmpty || supabaseKey.isEmpty) {

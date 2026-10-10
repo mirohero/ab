@@ -1,89 +1,56 @@
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'domain.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
-// Jede Änderung speichert nur den betroffenen Fragebogen.
-abstract class SessionRepository {
-  Future<List<Session>> load();
-  Future<void> save(Session session);
-  Future<void> clear();
+abstract class StudyRepository {
+  Future<Map<String, dynamic>> call(String requestId, String action,
+      {String? runId, String? questionId, String? optionId});
 }
 
-class LocalSessionRepository implements SessionRepository {
-  final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
-  static const _key = 'questionnaire.sessions.v1';
+class StudyApiException implements Exception {
+  final String code;
+  final int retryAfter;
+  StudyApiException(this.code, {this.retryAfter = 0});
   @override
-  Future<List<Session>> load() async {
-    final raw = await _preferences.getString(_key);
-    if (raw == null) return [];
-    final decoded = jsonDecode(raw) as List;
-    return decoded.map((entry) => Session.fromJson(
-      Map<String, dynamic>.from(entry as Map))).toList();
-  }
-  @override
-  Future<void> save(Session session) async {
-    final sessions = await load();
-    final index = sessions.indexWhere((entry) => entry.id == session.id);
-    if (index < 0) { sessions.add(session); } else { sessions[index] = session; }
-    await _preferences.setString(_key,
-      jsonEncode(sessions.map((entry) => entry.toJson()).toList()));
-  }
-  @override
-  Future<void> clear() => _preferences.remove(_key);
+  String toString() => code;
 }
 
-
-class SupabaseSessionRepository implements SessionRepository {
+class SupabaseStudyRepository implements StudyRepository {
   final SupabaseClient client;
-  SupabaseSessionRepository(this.client);
+  DateTime? _blockedUntil;
+  SupabaseStudyRepository(this.client);
 
-  Future<String> _userId() async {
+  @override
+  Future<Map<String, dynamic>> call(String requestId, String action,
+      {String? runId, String? questionId, String? optionId}) async {
+    final remaining = _blockedUntil?.difference(DateTime.now()).inSeconds ?? 0;
+    if (remaining > 0) throw StudyApiException('RATE_LIMIT', retryAfter: remaining + 1);
     if (client.auth.currentSession?.isExpired ?? false) {
       await client.auth.refreshSession();
     }
     if (client.auth.currentUser == null) {
       await client.auth.signInAnonymously();
     }
-    final user = client.auth.currentUser;
-    if (user == null) throw StateError('Anonyme Anmeldung fehlgeschlagen.');
-    return user.id;
-  }
-
-  @override
-  Future<List<Session>> load() async {
-    final userId = await _userId();
-    // PostgREST liefert paginiert; auch längere Verläufe vollständig laden.
-    final sessions = <Session>[];
-    const pageSize = 500;
-    for (var offset = 0;; offset += pageSize) {
-      final rows = await client.from('questionnaire_sessions').select()
-        .eq('user_id', userId).order('started_at').order('id')
-        .range(offset, offset + pageSize - 1);
-      sessions.addAll(rows.map((row) => Session.fromJson({
-        'id': row['id'], 'startedAt': row['started_at'],
-        'completedAt': row['completed_at'], 'answers': row['answers'],
-        'decision': row['decision'],
-      })));
-      if (rows.length < pageSize) break;
+    final raw = await client.rpc('study_call', params: {
+      'p_request': requestId, 'p_action': action, 'p_run': runId,
+      'p_question': questionId, 'p_option': optionId,
+    });
+    final response = Map<String, dynamic>.from(raw as Map);
+    if (response['ok'] != true) {
+      final code = response['error'] as String? ?? 'SERVER_ERROR';
+      final retry = (response['retry_after'] as num?)?.toInt() ?? 0;
+      if (retry > 0) _blockedUntil = DateTime.now().add(Duration(seconds: retry));
+      throw StudyApiException(code, retryAfter: retry);
     }
-    return sessions;
+    return Map<String, dynamic>.from(response['data'] as Map);
   }
+}
 
-  @override
-  Future<void> save(Session session) async {
-    final userId = await _userId();
-    await client.from('questionnaire_sessions').upsert({
-      'id': session.id, 'user_id': userId,
-      'started_at': session.startedAt.toIso8601String(),
-      'completed_at': session.completedAt?.toIso8601String(),
-      'answers': session.answers, 'decision': session.decision?.toJson(),
-    }, onConflict: 'user_id,id');
-  }
-
-  @override
-  Future<void> clear() async {
-    final userId = await _userId();
-    await client.from('questionnaire_sessions').delete().eq('user_id', userId);
-  }
+class PendingRequest {
+  final String id;
+  final String action;
+  final String? runId;
+  final String? questionId;
+  final String? optionId;
+  PendingRequest(this.action, {this.runId, this.questionId, this.optionId})
+      : id = const Uuid().v4();
 }
